@@ -285,7 +285,7 @@ def run_pyscf(molecule,
                 C = np.hstack((orb,C_nonloc[:,ndocc:]))
         #print('CSHAPE =',C.shape)
         pyscf_scf.mo_coeff = C 
-        if verbose: print('core',n_core_orbitals,'ndocc',ndocc,'ntot',ntot,'nmo',nmo)
+        if verbose: print('core',n_core_orbitals,'ndocc',ndocc,'n_orb',n_orbitals,'nmo',nmo)
     elif Orth_AO:
         t5 = time.time()
         S = pyscf_scf.get_ovlp()
