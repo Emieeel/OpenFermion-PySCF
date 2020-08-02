@@ -247,8 +247,7 @@ def run_pyscf(molecule,
                 if localize_virt:
                     orbvirt = lo.EdmistonRuedenberg(pyscf_molecule).kernel(C[:,ndocc:ntot])
             else:
-                print('Localization method not recognized')
-                raise
+                raise ValueError('Localization method not recognized')
         else:
             print('LOCALIZING TOGETHER','n_core',n_core_orbitals,'ntot',ntot)
             if localizemethod == 'Pipek-Mezey':
@@ -260,32 +259,29 @@ def run_pyscf(molecule,
             elif localizemethod == 'ER':
                 orb = lo.EdmistonRuedenberg(pyscf_molecule).kernel(C[:,n_core_orbitals:ntot])
             else:
-                print('Localization method not recognized')
-                raise
+                raise ValueError('Localization method not recognized')
         
         
         if localize_virt:
             if localize_sep:
-                #print('putting C together separately')
                 if localize_cas:
                     C = np.hstack((C_nonloc[:,:n_core_orbitals],orb,orbvirt,C_nonloc[:,ntot:nmo]))
                 else:
                     C = np.hstack((orb,orbvirt))
             else:
-                #print('putting C together mixed')
                 if localize_cas:
                     C = np.hstack((C_nonloc[:,:n_core_orbitals], orb, C_nonloc[:,ntot:nmo]))
                 else:
                     C = orb
         else:
-            #print('putting C together separately')
             if localize_cas:
                 C = np.hstack((C_nonloc[:,:n_core_orbitals], orb, C_nonloc[:,ndocc:]))
             else:                
                 C = np.hstack((orb,C_nonloc[:,ndocc:]))
-        #print('CSHAPE =',C.shape)
         pyscf_scf.mo_coeff = C 
         if verbose: print('core',n_core_orbitals,'ndocc',ndocc,'n_orb',n_orbitals,'nmo',nmo)
+    
+    # If you want to return orthogonal AOs as the MOS
     elif Orth_AO:
         t5 = time.time()
         S = pyscf_scf.get_ovlp()
@@ -293,16 +289,16 @@ def run_pyscf(molecule,
         S_sqrt_inv = S_eigvec @ np.diag((S_eigval)**(-1./2.)) @ np.linalg.inv(S_eigvec)
         C = S_sqrt_inv
         
-        #pyscf_scf.mo_coeff = C
+        pyscf_scf.mo_coeff = C
         if verbose: print("Computing inverse overlap took", time.time()-t5)
     else: 
         C = C_nonloc
     
     
     if verbose: print('localizing took', time.time()-t0)
-    # print('C SHAPE IS', C.shape, 'While locvirt =', localize_virt)
-    # Visualize the orbitals by preparing cube files
-    
+
+
+    # Visualize the orbitals by preparing cube files    
     if visualize:
         t13 = time.time()
         ndocc = np.count_nonzero(pyscf_scf.mo_occ)
@@ -315,32 +311,16 @@ def run_pyscf(molecule,
         print('Cube files of molecule', molecule.name,'created in', os.getcwd() + '/CUBE_FILES/')
         if verbose: print('extracting cube files took', time.time()-t13)
   
-    
-    # Now we are going to set a threshold. 
+    # Now set a threshold.
     # Set it also on the one electron integrals?
     if also_h1e:
         h1e = C.T.dot(pyscf_scf.get_hcore()).dot(C)
         low_indices_h1e = abs(h1e) < threshold
         h1e[low_indices_h1e] = .0
-    # We can do a SVD on the two electron integrals and 
-    # throw away the smallest eigenvalues
-    if do_svd:
-        h1e = C.T.dot(pyscf_scf.get_hcore()).dot(C)
-        mo_ints = ao2mo.full(pyscf_molecule, C, compact=False)
-        if len(mo_ints.shape) != 2:
-            mo_ints = mo_ints.reshape(nmo**2,nmo**2)
-            print('THIS SHOULD NOT BE PRINTED')
-            
-        U, E_mo, Vh = np.linalg.svd(mo_ints)
-        print('MO_eigenvalues are', E_mo)
-        for i in range(len(E_mo)):
-            if E_mo[i] < threshold:
-                E_mo[i] = .0
-        mo_ints = U.dot(np.diag(E_mo)).dot(Vh)
-        super_threshold_indices = abs(mo_ints) < 1e-8
-        mo_ints[super_threshold_indices] = .0
 
     # Or we could use the cholesky decomposition with convergence threshold
+    # If we run an FCI, we do the cholesky decomposition here. If we run CASCI,
+    # we only do cholesky decomposition inside the CAS.
     elif do_cholesky and run_fci:
         t11 = time.time()
         h1e = C.T.dot(pyscf_scf.get_hcore()).dot(C)
@@ -354,6 +334,7 @@ def run_pyscf(molecule,
         t10 = time.time()
         mo_ints = np.einsum('pqt,rst->pqrs',mo_ints_ch,mo_ints_ch).reshape(nmo**2,nmo**2)
         if verbose: print("recalculating moints took", time.time()-t10)
+    
     # Otherwise we just set the threshold directly
     elif run_fci:
         t1 = time.time()
@@ -365,6 +346,7 @@ def run_pyscf(molecule,
         low_indices = abs(mo_ints) < threshold
         mo_ints[low_indices] = .0       
         if verbose: print('setting threshold took', time.time()-t2)
+    
     # Pyscf module
     molecule.hf_energy = float(pyscf_scf.e_tot)
     if verbose:
@@ -383,12 +365,13 @@ def run_pyscf(molecule,
     molecule.orbital_energies = pyscf_scf.mo_energy.astype(float)
     if verbose: print('populating data fields in molecule class took', time.time()-t7)
     
-    t3 = time.time()
-    # Get integrals.
+    
+    # Now we compute the integrals. We can compute them only inside the active
+    # space (used for saving memory), or we can compute them for every MO. 
     if only_cas:
+        t3 = time.time()
         ncore = (pyscf_molecule.nelectron - n_electrons) // 2
-        ncas = n_orbitals
-        nocc = ncore + ncas
+        nocc = ncore + n_orbitals
         C = C[:,ncore:nocc]
         one_body_integrals, two_body_integrals = compute_integrals(
                 pyscf_molecule, pyscf_scf, C, threshold)
@@ -397,9 +380,11 @@ def run_pyscf(molecule,
         molecule.overlap_integrals = pyscf_scf.get_ovlp()
         if verbose:
             #print('shape 2bodyints is', two_body_integrals.shape)
-            print('computing and storing ONLY cas (with ncore',ncore,'ncas',ncas,\
-                  'and nocc',nocc,') integrals took', time.time()-t3)
+            print('computing and storing ONLY cas integrals (with ncore',ncore,'ncas',\
+                  n_orbitals, 'and nocc',nocc,') took', time.time()-t3)
     else:
+        # If we do run_fci, we already computed the integrals with setting
+        # the treshold, in which case we only need to transpose them.
         if run_fci:
             one_body_integrals, two_body_integrals = transpose_integrals(
                 h1e, mo_ints, nmo)
@@ -467,9 +452,7 @@ def run_pyscf(molecule,
                 molecule.name, molecule.n_electrons, molecule.fci_energy))
     
     # Run CASCI
-    
     if run_casci:
-        # pyscf_scf.mo_coeff = C
         t4 = time.time()
         pyscf_cas = pyscf_scf.CASCI(n_orbitals, n_electrons)
         pyscf_cas.verbose = 0
@@ -479,8 +462,7 @@ def run_pyscf(molecule,
         nocc = ncore + ncas
         C = C[:,ncore:nocc]
         mo_intscas = ao2mo.full(pyscf_molecule, C, compact=False)
-        if verbose:
-            print('extracting cas integrals took', time.time()-t4)
+        if verbose: print('extracting cas integrals took', time.time()-t4)
         
         if do_cholesky:
             # if verbose: print('ncas=',ncas,'mo_intscas.shape=',mo_intscas.shape)
