@@ -372,9 +372,9 @@ def run_pyscf(molecule,
         t3 = time.time()
         ncore = (pyscf_molecule.nelectron - n_electrons) // 2
         nocc = ncore + n_orbitals
-        C = C[:,ncore:nocc]
+        C_copy = C[:,ncore:nocc]
         one_body_integrals, two_body_integrals = compute_integrals(
-                pyscf_molecule, pyscf_scf, C, threshold)
+                pyscf_molecule, pyscf_scf, C_copy, threshold)
         molecule.one_body_integrals = one_body_integrals
         molecule.two_body_integrals = two_body_integrals
         molecule.overlap_integrals = pyscf_scf.get_ovlp()
@@ -383,6 +383,7 @@ def run_pyscf(molecule,
             print('computing and storing ONLY cas integrals (with ncore',ncore,'ncas',\
                   n_orbitals, 'and nocc',nocc,') took', time.time()-t3)
     else:
+        t3 = time.time()
         # If we do run_fci, we already computed the integrals with setting
         # the treshold, in which case we only need to transpose them.
         if run_fci:
@@ -454,12 +455,14 @@ def run_pyscf(molecule,
     # Run CASCI
     if run_casci:
         t4 = time.time()
+        print('Computing CASCI(' + str(n_orbitals) + ',' + str(n_electrons) + ')')
         pyscf_cas = pyscf_scf.CASCI(n_orbitals, n_electrons)
         pyscf_cas.verbose = 0
         pyscf_cas.canonicalization = 0
         ncore = pyscf_cas.ncore
         ncas = pyscf_cas.ncas
         nocc = ncore + ncas
+        print('ncore',ncore,'ncas',ncas,'nocc',nocc)
         C = C[:,ncore:nocc]
         mo_intscas = ao2mo.full(pyscf_molecule, C, compact=False)
         if verbose: print('extracting cas integrals took', time.time()-t4)
@@ -483,8 +486,8 @@ def run_pyscf(molecule,
             low_indices = abs(mo_intscas) < threshold
             mo_intscas[low_indices] = .0
             if verbose: print("setting threshold on mo_ints took", time.time()-t12)
-        pyscf_cas.eri = mo_intscas
         
+        pyscf_cas.eri = mo_intscas
         t5 = time.time()
         pyscf_cas.kernel()
         molecule.general_calculations['casci_energy'] = pyscf_cas.e_tot
