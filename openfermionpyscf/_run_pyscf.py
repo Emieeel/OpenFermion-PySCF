@@ -86,8 +86,8 @@ def compute_integrals(pyscf_molecule, pyscf_scf, C, threshold):
     # Get one electrons integrals.
     n_orbitals = C.shape[1]
     one_electron_compressed = reduce(np.dot, (C.T,
-                                                 pyscf_scf.get_hcore(),
-                                                 C))
+                                              pyscf_scf.get_hcore(),
+                                              C))
     # print(one_electron_compressed.shape, 'norb', n_orbitals)
     one_electron_integrals = one_electron_compressed.reshape(
         n_orbitals, n_orbitals).astype(float)
@@ -160,7 +160,7 @@ def run_pyscf(molecule,
               do_svd=False,
               Orth_AO=False,
               save_tohdf5=True,
-              max_memory=4000,
+              max_memory=8000,
               verbose_lvl=None):
     """
     This function runs a pyscf calculation.
@@ -249,7 +249,8 @@ def run_pyscf(molecule,
             else:
                 raise ValueError('Localization method not recognized')
         else:
-            print('LOCALIZING TOGETHER','n_core',n_core_orbitals,'ntot',ntot)
+            print('LOCALIZING TOGETHER','n_core',n_core_orbitals,'n_active',n_orbitals, \
+                  'n_virtual', (nmo-(n_core_orbitals + n_orbitals)))
             if localizemethod == 'Pipek-Mezey':
                 orb = lo.PipekMezey(pyscf_molecule).kernel(C[:,n_core_orbitals:ntot])
             elif localizemethod == 'Boys':
