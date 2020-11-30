@@ -155,6 +155,7 @@ def run_pyscf(molecule,
               localize_virt=False,
               localize_cas=False,
               only_cas=False,
+              also_occ=True,
               localize_sep=True,
               do_cholesky=False,
               do_svd=False,
@@ -373,7 +374,10 @@ def run_pyscf(molecule,
         t3 = time.time()
         ncore = (pyscf_molecule.nelectron - n_electrons) // 2
         nocc = ncore + n_orbitals
-        C_copy = C[:,ncore:nocc]
+        if also_occ:
+            C_copy = C[:,:nocc]
+        else:
+            C_copy = C[:,ncore:nocc]
         one_body_integrals, two_body_integrals = compute_integrals(
                 pyscf_molecule, pyscf_scf, C_copy, threshold)
         molecule.one_body_integrals = one_body_integrals
